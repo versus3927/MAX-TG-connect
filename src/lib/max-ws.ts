@@ -117,6 +117,8 @@ export class MaxWsClient extends EventEmitter {
   loggedIn = false;
   /** userId нашего аккаунта (из ответа LOGIN) */
   ownUserId: number | null = null;
+  /** Отображаемое имя нашего аккаунта (из профиля LOGIN) */
+  ownDisplayName: string | null = null;
   chats: MaxChat[] = [];
   contacts: Record<string, { name?: string }> = {};
 
@@ -145,6 +147,8 @@ export class MaxWsClient extends EventEmitter {
       );
     }
     this.ownUserId = idToNumber(payload.profile?.contact?.id ?? null);
+    this.ownDisplayName =
+      payload.profile?.contact?.names?.[0]?.name ?? null;
     this.chats = (payload.chats ?? []).map(normalizeChat);
     for (const c of payload.contacts ?? []) {
       const id = idToNumber(c.id);

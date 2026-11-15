@@ -115,18 +115,23 @@ async function relayMessage(
   chatId: number,
   msg: HistoryMessage,
 ): Promise<void> {
-  if (msg.sender != null && asNum(msg.sender) === client.ownUserId) return; // свои сообщения пропускаем
+  // Пересылаем ВСЕ сообщения, включая свои
   const filter = (await getSetting("max_chat_id"))?.trim() || process.env.MAX_CHAT_ID?.trim() || null;
   if (filter && String(chatId) !== filter) return;
 
   const senderId = asNum(msg.sender);
   let senderName: string | null = null;
-  if (senderId != null) {
+
+  // Если это сообщение от владельца аккаунта — берём имя из профиля
+  if (senderId != null && senderId === client.ownUserId) {
+    senderName = client.ownDisplayName ?? null;
+  }
+
+  if (!senderName && senderId != null) {
     const [resolved] = await client.resolveContacts([senderId]);
     senderName = resolved?.name ?? null;
   }
   if (!senderName) {
-    // имя может лежать прямо в lastMessage/чате (иногда сервер присылает senderName)
     senderName = (msg as unknown as { senderName?: string }).senderName ?? null;
   }
   senderName ??= senderId != null ? `id${senderId}` : "Участники MAX";
