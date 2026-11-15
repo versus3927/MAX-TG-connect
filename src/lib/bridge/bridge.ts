@@ -145,8 +145,10 @@ export async function handleTgUpdate(update: TgUpdate): Promise<void> {
   const username = msg.from?.username ?? null;
   const firstName = msg.from?.first_name ?? null;
 
+  // Любое сообщение боту — автоматически (ре)активируем подписчика
+  await upsertSubscriber(chatId, username, firstName);
+
   if (text.startsWith("/start")) {
-    await upsertSubscriber(chatId, username, firstName);
     await tgSendMessage(chatId, WELCOME_TEXT);
     return;
   }
