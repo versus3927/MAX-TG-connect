@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -e
 
 echo "[railway-start] Node: $(node -v)"
-echo "[railway-start] PORT=${PORT:-3000} DATABASE_URL=$([ -n "${DATABASE_URL:-}" ] && echo set || echo missing) TELEGRAM_BOT_TOKEN=$([ -n "${TELEGRAM_BOT_TOKEN:-}" ] && echo set || echo missing)"
 
-if [ -n "${DATABASE_URL:-}" ]; then
-  echo "[railway-start] Running drizzle-kit push..."
-  npx drizzle-kit push --force
+# Пытаемся создать таблицы, но не роняем все приложение, если база еще не готова
+if [ -n "$DATABASE_URL" ]; then
+  echo "[railway-start] Initializing database schema..."
+  npx drizzle-kit push --force || echo "[railway-start] DB Push failed, but continuing..."
 else
-  echo "[railway-start] DATABASE_URL missing, skipping drizzle push"
+  echo "[railway-start] WARNING: DATABASE_URL is not set"
 fi
 
-echo "[railway-start] Starting Next.js on 0.0.0.0:${PORT:-3000}"
-exec npx next start -H 0.0.0.0 -p "${PORT:-3000}"
+echo "[railway-start] Starting Next.js..."
+exec npx next start -H 0.0.0.0 -p ${PORT:-3000}

@@ -13,6 +13,8 @@ import { Dashboard } from "@/components/Dashboard";
 import { Reveal } from "@/components/Reveal";
 import { SetupGuide } from "@/components/SetupGuide";
 
+export const dynamic = "force-dynamic";
+
 function NodeCard({
   icon,
   title,
