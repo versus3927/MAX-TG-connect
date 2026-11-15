@@ -2,11 +2,13 @@
 builder = "NIXPACKS"
 
 [deploy]
-# Сначала создаём/синхронизируем таблицы в PostgreSQL, затем стартуем Next.js.
-# Воркер моста (MAX long polling + Telegram long polling) поднимается
-# автоматически внутри next start через src/instrumentation.ts.
-startCommand = "sh -c 'npx drizzle-kit push --force && npm run start'"
-healthcheckPath = "/api/health"
+# Явно биндимся на 0.0.0.0:$PORT, чтобы Railway healthcheck видел приложение.
+# Схему БД пушим перед стартом. Если Railway перезапустит контейнер,
+# команда безопасна — drizzle-kit push идемпотентен.
+startCommand = "bash ./scripts/railway-start.sh"
+# Для Railway лучше проверять просто boot приложения, а не зависеть от БД.
+# Внутренний /api/health с запросом к БД остаётся для локальной валидации платформы.
+healthcheckPath = "/"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5
