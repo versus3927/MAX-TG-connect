@@ -1,0 +1,130 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-display), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono), ui-monospace, monospace;
+
+  --color-max: #8b5cf6;
+  --color-tg: #38bdf8;
+
+  --animate-drift: drift 22s ease-in-out infinite alternate;
+  --animate-drift-2: drift 28s ease-in-out infinite alternate-reverse;
+  --animate-flow: flow 2.6s linear infinite;
+  --animate-flow-2: flow 3.4s linear infinite;
+  --animate-pulse-soft: pulseSoft 2.4s ease-in-out infinite;
+  --animate-marquee: marquee 26s linear infinite;
+
+  @keyframes drift {
+    0% {
+      transform: translate3d(-6%, -4%, 0) scale(1);
+    }
+    50% {
+      transform: translate3d(4%, 6%, 0) scale(1.12);
+    }
+    100% {
+      transform: translate3d(8%, -6%, 0) scale(0.96);
+    }
+  }
+  @keyframes flow {
+    0% {
+      left: -4%;
+      opacity: 0;
+    }
+    12% {
+      opacity: 1;
+    }
+    88% {
+      opacity: 1;
+    }
+    100% {
+      left: 100%;
+      opacity: 0;
+    }
+  }
+  @keyframes pulseSoft {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.55;
+      transform: scale(0.86);
+    }
+  }
+  @keyframes marquee {
+    0% {
+      transform: translateX(0);
+    }
+    100% {
+      transform: translateX(-50%);
+    }
+  }
+}
+
+html {
+  background: #050508;
+}
+
+body {
+  font-family: var(--font-sans);
+  overflow-x: hidden;
+}
+
+/* Тонкая градиентная рамка карточек */
+.g-card {
+  position: relative;
+  border-radius: 1.25rem;
+  background:
+    linear-gradient(rgba(13, 13, 20, 0.92), rgba(13, 13, 20, 0.92)) padding-box,
+    linear-gradient(135deg, rgba(139, 92, 246, 0.45), rgba(255, 255, 255, 0.06) 38%, rgba(56, 189, 248, 0.4)) border-box;
+  border: 1px solid transparent;
+}
+
+.g-card-soft {
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.text-gradient {
+  background: linear-gradient(100deg, #c4b5fd 0%, #f0abfc 30%, #7dd3fc 65%, #a5b4fc 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.dot-grid {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+  background-size: 26px 26px;
+  mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, black 30%, transparent 75%);
+}
+
+.noise::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 60;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+}
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.shadow-glow-max {
+  box-shadow: 0 0 42px -8px rgba(139, 92, 246, 0.55);
+}
+.shadow-glow-tg {
+  box-shadow: 0 0 42px -8px rgba(56, 189, 248, 0.55);
+}

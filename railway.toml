@@ -1,0 +1,12 @@
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+# Сначала создаём/синхронизируем таблицы в PostgreSQL, затем стартуем Next.js.
+# Воркер моста (MAX long polling + Telegram long polling) поднимается
+# автоматически внутри next start через src/instrumentation.ts.
+startCommand = "sh -c 'npx drizzle-kit push --force && npm run start'"
+healthcheckPath = "/api/health"
+healthcheckTimeout = 300
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
