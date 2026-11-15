@@ -120,12 +120,11 @@ export async function broadcastEvent(input: {
 const WELCOME_TEXT = [
   "<b>Мост MAX → Telegram подключён.</b>",
   "",
-  "Вы подписаны на ленту сообщений из группы MAX. Каждое новое сообщение будет приходить сюда автоматически — с именем и ником отправителя в MAX.",
+  "Вы подписаны на ленту сообщений из группы MAX. Каждое новое сообщение будет приходить сюда автоматически — с именем отправителя в MAX.",
   "",
   "Команды:",
   "/status — состояние подписки",
-  "/stop — выключить пересылку",
-  "/start — включить обратно",
+  "/start — подключиться",
 ].join("\n");
 
 const HELP_TEXT = [
@@ -134,7 +133,6 @@ const HELP_TEXT = [
   "Владелец группы держит свой аккаунт MAX в группе — мост читает её и дублирует сообщения вам в Telegram.",
   "",
   "/start — подписаться на пересылку",
-  "/stop — отписаться",
   "/status — проверить состояние",
 ].join("\n");
 
@@ -153,14 +151,7 @@ export async function handleTgUpdate(update: TgUpdate): Promise<void> {
     return;
   }
 
-  if (text.startsWith("/stop")) {
-    await setSubscriberActive(chatId, false);
-    await tgSendMessage(
-      chatId,
-      "Пересылка выключена. Напишите /start, чтобы включить её снова.",
-    );
-    return;
-  }
+
 
   if (text.startsWith("/status")) {
     const enabled = await isBridgeEnabled();
@@ -185,6 +176,6 @@ export async function handleTgUpdate(update: TgUpdate): Promise<void> {
 
   await tgSendMessage(
     chatId,
-    "Я только пересылаю сообщения из MAX и не отвечаю в чат. Команды: /start, /stop, /status, /help.",
+    "Я только пересылаю сообщения из MAX и не отвечаю в чат. Команды: /start, /status, /help.",
   );
 }
