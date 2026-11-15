@@ -22,6 +22,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { CopyField } from "@/components/CopyField";
 
 /* ------------------------------- types ------------------------------- */
 
@@ -171,6 +172,7 @@ export function Dashboard() {
   const [connectErr, setConnectErr] = useState<string | null>(null);
   const [captchaLink, setCaptchaLink] = useState<string | null>(null);
   const [captchaTokenDraft, setCaptchaTokenDraft] = useState("");
+  const [issuedToken, setIssuedToken] = useState<string | null>(null);
 
   const [testName, setTestName] = useState("Максим");
   const [testText, setTestText] = useState(
@@ -281,6 +283,9 @@ export function Dashboard() {
       setConnectMsg("Аккаунт подключается… статус обновится через несколько секунд.");
       setCodeSent(false);
       setSmsCode("");
+      setIssuedToken(
+        typeof r.data.accessToken === "string" ? r.data.accessToken : null,
+      );
     } else if (r.status !== 401) {
       setConnectErr(String(r.data.error ?? "Неверный код или сессия истекла"));
     }
@@ -463,6 +468,24 @@ export function Dashboard() {
                   от лица вашего аккаунта и пересылает сообщения подписчикам.
                 </p>
               </div>
+
+              {issuedToken && (
+                <div className="space-y-2 rounded-xl border border-amber-400/30 bg-amber-400/[0.07] px-4 py-3.5">
+                  <p className="flex items-center gap-1.5 text-xs font-semibold text-amber-200">
+                    <KeyRound size={13} /> Токен сессии MAX — показывается один раз
+                  </p>
+                  <CopyField
+                    label="Сохраните на Railway как MAX_ACCOUNT_TOKEN"
+                    value={issuedToken}
+                  />
+                  <p className="text-[11px] leading-relaxed text-amber-200/70">
+                    Задайте его в Railway → Variables, и вход после рестартов станет
+                    автоматическим — SMS больше не понадобится. Сейчас токен живёт
+                    только в памяти сервера и потеряется при перезапуске. Не показывайте
+                    его никому: это полный доступ к вашему аккаунту MAX.
+                  </p>
+                </div>
+              )}
               <div className="flex items-center justify-between gap-3">
                 <p className="text-[11px] leading-snug text-zinc-600">
                   Сессия живёт, пока запущен сервер. После рестарта Railway —
@@ -615,12 +638,29 @@ export function Dashboard() {
                 <ShieldAlert size={14} className="mt-0.5 shrink-0 text-amber-300" />
                 <span>
                   Это вход в ваш личный аккаунт через приватный протокол MAX
-                  (юзербот). Такая автоматизация может нарушать условия MAX —
-                  аккаунт теоретически могут ограничить. Для продакшна удобно
-                  один раз взять токен сессии и задать его как
-                  MAX_ACCOUNT_TOKEN на Railway — тогда вход после рестартов автоматический.
+                  (юзербот). Для продакшна удобно один раз получить токен (панель
+                  покажет его после SMS-входа) и задать его как MAX_ACCOUNT_TOKEN
+                  на Railway — тогда вход после рестартов автоматический.
                 </span>
               </div>
+
+              <details className="group rounded-xl border border-white/8 bg-white/[0.02]">
+                <summary className="cursor-pointer px-3.5 py-2.5 text-xs font-medium text-zinc-300 transition-colors hover:text-white">
+                  Альтернатива: как взять токен из браузера вручную ↓
+                </summary>
+                <div className="space-y-1.5 border-t border-white/8 px-3.5 py-3 text-[11px] leading-relaxed text-zinc-500">
+                  <p><span className="font-semibold text-zinc-300">1.</span> Откройте <code className="rounded bg-black/40 px-1 font-mono text-violet-300">web.max.ru</code> и войдите в свой аккаунт</p>
+                  <p><span className="font-semibold text-zinc-300">2.</span> Нажмите <code className="rounded bg-black/40 px-1 font-mono text-zinc-300">F12</code> → вкладка <code className="rounded bg-black/40 px-1 font-mono text-zinc-300">Network</code></p>
+                  <p><span className="font-semibold text-zinc-300">3.</span> В фильтре выберите <code className="rounded bg-black/40 px-1 font-mono text-zinc-300">WS</code> (WebSocket)</p>
+                  <p><span className="font-semibold text-zinc-300">4.</span> Перезагрузите страницу (F5) и кликните на соединение <code className="rounded bg-black/40 px-1 font-mono text-zinc-300">wss://…oneme.ru/websocket</code></p>
+                  <p className="rounded-lg border border-rose-400/20 bg-rose-400/[0.06] px-2.5 py-1.5 text-rose-200/90">
+                    <span className="font-bold">⚠ Важно:</span> откройте вкладку <span className="font-bold text-white">Messages</span> — <span className="underline">НЕ Headers</span>! На скриншоте заголовков (Accept-Encoding, Origin…) токена нет — это не то место.
+                  </p>
+                  <p><span className="font-semibold text-zinc-300">5.</span> В Messages найдите сообщение с <code className="rounded bg-black/40 px-1 font-mono text-zinc-300">{'"opcode": 19'}</code> (LOGIN)</p>
+                  <p><span className="font-semibold text-zinc-300">6.</span> Внутри payload скопируйте значение поля <code className="rounded bg-black/40 px-1 font-mono text-emerald-300">token</code> — это длинная строка, и есть ваш <code className="rounded bg-black/40 px-1 font-mono text-violet-300">MAX_ACCOUNT_TOKEN</code></p>
+                  <p className="mt-1 text-zinc-600">Затем вставьте его на Railway → сервис MAX-TG-connect → Variables → MAX_ACCOUNT_TOKEN</p>
+                </div>
+              </details>
             </form>
           )}
         </div>

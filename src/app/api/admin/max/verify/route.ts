@@ -33,8 +33,10 @@ export async function POST(req: Request) {
     saveMaxAccountToken(accessToken); // только в памяти процесса
     session.client.close();
     setAuthSession(null);
-    // воркер заметит токен из RAM и подключится сам (цикл maxLoop)
-    return Response.json({ ok: true });
+    // воркер заметит токен из RAM и подключится сам (цикл maxLoop).
+    // Токен возвращаем панели один раз — чтобы владелец мог сохранить его
+    // как MAX_ACCOUNT_TOKEN на Railway и вход стал автоматическим.
+    return Response.json({ ok: true, accessToken });
   } catch (err) {
     console.error("[api/max/verify]", err);
     return Response.json(

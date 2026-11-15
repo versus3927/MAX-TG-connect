@@ -54,15 +54,15 @@
 3. Добавьте в проект **PostgreSQL** (Add → Database → PostgreSQL).
 4. В Variables сервиса приложения задайте:
 
-| Переменная           | Значение                                                       |
+| Переменная           | Где взять                                                      |
 | -------------------- | -------------------------------------------------------------- |
-| `TELEGRAM_BOT_TOKEN` | токен от @BotFather                                             |
-| `DATABASE_URL`       | `${{Postgres.DATABASE_URL}}` (ссылка на сервис БД)              |
-| `ADMIN_SECRET`       | пароль панели — **обязательно задайте**, через панель вход в MAX |
-| `MAX_ACCOUNT_TOKEN`  | (опц.) токен сессии аккаунта MAX — автовход без SMS             |
-| `MAX_DEVICE_ID`      | (опц.) UUID устройства; иначе генерируется                      |
-| `MAX_CHAT_ID`        | (опц.) chat_id группы MAX; пусто = все группы и каналы          |
-| `MAX_WS_URL`         | (опц.) по умолчанию `wss://ws-api.oneme.ru/websocket`           |
+| `TELEGRAM_BOT_TOKEN` | Telegram → **@BotFather** → `/newbot` (или `/mybots` → API Token) |
+| `DATABASE_URL`       | Railway → Add → Database → PostgreSQL → значение `${{Postgres.DATABASE_URL}}` |
+| `ADMIN_SECRET`       | Придумайте сами: длинная случайная строка. **Обязательно** — через панель выполняется вход в ваш MAX |
+| `MAX_ACCOUNT_TOKEN`  | (опц.) Панель покажет токен один раз после SMS-входа — скопируйте, и вход станет автоматическим |
+| `MAX_DEVICE_ID`      | (опц.) Любой UUID; пусто = сгенерируется                        |
+| `MAX_CHAT_ID`        | (опц.) Панель → «Группа MAX»: после входа там появятся чаты с их chat_id — кликните нужную |
+| `MAX_WS_URL`         | (опц.) Не трогайте: по умолчанию `wss://ws-api.oneme.ru/websocket` |
 
 5. Deploy. Таблицы создаются автоматически (`drizzle-kit push` в startCommand, см. `railway.toml`).
 6. Откройте домен Railway → Пульт → **введите номер телефона и код из SMS**.
