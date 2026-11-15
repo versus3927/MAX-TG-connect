@@ -3,19 +3,23 @@
 import {
   AlertTriangle,
   ArrowDownLeft,
-  Bot,
+  ArrowRight,
   CheckCheck,
   Cpu,
+  ExternalLink,
   Filter,
   FlaskConical,
   Info,
   KeyRound,
   Loader2,
+  LogOut,
   MessagesSquare,
   Radio,
   Send,
+  ShieldAlert,
   Trash2,
   Users,
+  UserRound,
 } from "lucide-react";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 
@@ -51,16 +55,22 @@ export type StatusPayload = {
   bridge: {
     enabled: boolean;
     maxChatId: string | null;
-    knownChats: { chatId: string; title: string; seenAt: string }[];
+    knownChats: { chatId: string; title: string; seenAt: string; type?: string }[];
     workerAlive: boolean;
     heartbeat: string | null;
-    maxLastPoll: string | null;
+    maxLastSync: string | null;
   };
   bots: {
     telegram: BotInfo | null;
-    max: BotInfo | null;
     telegramError: string | null;
-    maxError: string | null;
+  };
+  maxAccount: {
+    connected: boolean;
+    status: string;
+    error: string | null;
+    hasTokenInEnv: boolean;
+    info: { ownUserId?: number | null; chatsCount?: number; at?: string } | null;
+    lastSync: string | null;
   };
   stats: {
     activeSubscribers: number;
@@ -96,6 +106,21 @@ function StatusDot({ alive }: { alive: boolean }) {
   );
 }
 
+function accountStatusLabel(s: string): string {
+  switch (s) {
+    case "connected":
+      return "в сети";
+    case "connecting":
+      return "подключение…";
+    case "awaiting-code":
+      return "ждёт код из SMS";
+    case "error":
+      return "ошибка";
+    default:
+      return "не подключён";
+  }
+}
+
 function StatusBadge({ event }: { event: EventItem }) {
   const map: Record<string, { cls: string; label: string }> = {
     ok: {
@@ -114,12 +139,8 @@ function StatusBadge({ event }: { event: EventItem }) {
       cls: "text-rose-300 border-rose-400/20 bg-rose-400/10",
       label: `частично: ${event.delivered}`,
     },
-    duplicate: {
-      cls: "text-zinc-400 border-white/10 bg-white/5",
-      label: "дубликат",
-    },
   };
-  const s = map[event.status] ?? map.ok;
+  const s = map[event.status] ?? map.error;
   return (
     <span
       className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${s.cls}`}
@@ -142,8 +163,16 @@ export function Dashboard() {
   const [chatIdDraft, setChatIdDraft] = useState("");
   const [chatIdTouched, setChatIdTouched] = useState(false);
 
+  // connect account (SMS)
+  const [phone, setPhone] = useState("+7");
+  const [codeSent, setCodeSent] = useState(false);
+  const [smsCode, setSmsCode] = useState("");
+  const [connectMsg, setConnectMsg] = useState<string | null>(null);
+  const [connectErr, setConnectErr] = useState<string | null>(null);
+  const [captchaLink, setCaptchaLink] = useState<string | null>(null);
+  const [captchaTokenDraft, setCaptchaTokenDraft] = useState("");
+
   const [testName, setTestName] = useState("Максим");
-  const [testNick, setTestNick] = useState("maksim_max");
   const [testText, setTestText] = useState(
     "Напоминаю: завтра в 10:00 созвон по проекту, не опаздывайте.",
   );
@@ -170,39 +199,99 @@ export function Dashboard() {
     return () => clearInterval(t);
   }, [load]);
 
-  const authed = useCallback(
-    async (path: string, init?: RequestInit): Promise<boolean> => {
+  const postJson = useCallback(
+    async (
+      path: string,
+      body: unknown,
+    ): Promise<{ ok: boolean; status: number; data: Record<string, unknown> }> => {
       const res = await fetch(path, {
-        ...init,
-        headers: {
-          "Content-Type": "application/json",
-          "x-admin-key": adminKey,
-          ...(init?.headers ?? {}),
-        },
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-key": adminKey },
+        body: JSON.stringify(body ?? {}),
       });
       if (res.status === 401) setUnauthorized(true);
-      return res.ok;
+      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      return { ok: res.ok && data.ok === true, status: res.status, data };
     },
     [adminKey],
   );
 
   async function toggleBridge(enabled: boolean) {
     setBusy("toggle");
-    await authed("/api/admin/toggle", {
-      method: "POST",
-      body: JSON.stringify({ enabled }),
-    });
+    await postJson("/api/admin/toggle", { enabled });
     await load();
     setBusy(null);
   }
 
   async function saveChatId(value: string) {
     setBusy("filter");
-    await authed("/api/admin/config", {
-      method: "POST",
-      body: JSON.stringify({ maxChatId: value }),
-    });
+    await postJson("/api/admin/config", { maxChatId: value });
     setChatIdTouched(false);
+    await load();
+    setBusy(null);
+  }
+
+  async function requestCode(e?: React.FormEvent, captchaToken?: string) {
+    e?.preventDefault();
+    setBusy("sms");
+    setConnectErr(null);
+    setConnectMsg(null);
+    const r = await postJson("/api/admin/max/connect", {
+      phone,
+      ...(captchaToken ? { captchaToken } : {}),
+    });
+    if (r.ok) {
+      setCodeSent(true);
+      setCaptchaLink(null);
+      setConnectMsg("Код отправлен (SMS или сообщение в MAX). Введите его ниже.");
+    } else if (r.status === 428 || r.data.reason === "captcha") {
+      setCaptchaLink(
+        typeof r.data.captchaLink === "string" ? r.data.captchaLink : null,
+      );
+      setConnectErr(String(r.data.error ?? "MAX просит капчу"));
+    } else if (r.status !== 401) {
+      setConnectErr(String(r.data.error ?? "Не удалось отправить код"));
+    }
+    await load();
+    setBusy(null);
+  }
+
+  async function submitCaptcha() {
+    let token = captchaTokenDraft.trim();
+    if (!token) return;
+    // принимаем как голый токен, так и весь URL редиректа с token=...
+    try {
+      if (token.startsWith("http")) {
+        const u = new URL(token);
+        token = u.searchParams.get("token") ?? token;
+      }
+    } catch {
+      /* оставляем как есть */
+    }
+    await requestCode(undefined, token);
+    setCaptchaTokenDraft("");
+  }
+
+  async function verifyCode(e?: React.FormEvent) {
+    e?.preventDefault();
+    setBusy("verify");
+    setConnectErr(null);
+    const r = await postJson("/api/admin/max/verify", { code: smsCode });
+    if (r.ok) {
+      setConnectMsg("Аккаунт подключается… статус обновится через несколько секунд.");
+      setCodeSent(false);
+      setSmsCode("");
+    } else if (r.status !== 401) {
+      setConnectErr(String(r.data.error ?? "Неверный код или сессия истекла"));
+    }
+    await load();
+    setBusy(null);
+  }
+
+  async function disconnectMax() {
+    setBusy("disconnect");
+    await postJson("/api/admin/max/disconnect", {});
+    setCodeSent(false);
     await load();
     setBusy(null);
   }
@@ -210,31 +299,24 @@ export function Dashboard() {
   async function runTest() {
     setBusy("test");
     setTestResult(null);
-    const res = await fetch("/api/admin/test", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-admin-key": adminKey },
-      body: JSON.stringify({
-        senderName: testName,
-        senderUsername: testNick,
-        text: testText,
-      }),
+    const r = await postJson("/api/admin/test", {
+      senderName: testName,
+      text: testText,
     });
-    if (res.ok) {
-      const json = await res.json();
-      setTestResult(`Отправлено подписчикам: ${json.delivered}`);
-    } else if (res.status === 401) {
-      setUnauthorized(true);
-      setTestResult("Нужен ключ администратора");
-    } else {
-      setTestResult("Ошибка отправки");
-    }
+    if (r.ok) setTestResult(`Отправлено подписчикам: ${r.data.delivered}`);
+    else if (r.status === 401) setTestResult("Нужен ключ администратора");
+    else setTestResult(String(r.data.error ?? "Ошибка отправки"));
     await load();
     setBusy(null);
   }
 
   async function removeSub(id: number) {
     setBusy(`sub-${id}`);
-    await authed(`/api/admin/subscribers?id=${id}`, { method: "DELETE" });
+    const res = await fetch(`/api/admin/subscribers?id=${id}`, {
+      method: "DELETE",
+      headers: { "x-admin-key": adminKey },
+    });
+    if (res.status === 401) setUnauthorized(true);
     await load();
     setBusy(null);
   }
@@ -292,20 +374,15 @@ export function Dashboard() {
 
       {cfgMissing && (
         <div className="rounded-xl border border-violet-400/25 bg-violet-400/[0.08] px-4 py-4 text-sm">
-          <p className="font-medium text-violet-200">
-            Мост ещё не настроен
-          </p>
+          <p className="font-medium text-violet-200">Мост ещё не настроен</p>
           <p className="mt-1 text-violet-200/70">
-            Задайте переменные окружения{" "}
-            <code className="rounded bg-black/40 px-1.5 py-0.5 font-mono text-[12px] text-violet-100">TELEGRAM_BOT_TOKEN</code>{" "}
-            и{" "}
-            <code className="rounded bg-black/40 px-1.5 py-0.5 font-mono text-[12px] text-violet-100">MAX_BOT_TOKEN</code>
-            {!data?.configured.telegram && !data?.configured.max
-              ? " — сейчас не заданы оба токена."
-              : !data?.configured.telegram
-                ? " — не задан токен Telegram."
-                : " — не задан токен MAX."}{" "}
-            Инструкция — ниже, в разделе «Запуск».
+            {!data?.configured.telegram
+              ? "Задайте на Railway переменную TELEGRAM_BOT_TOKEN (токен бота от @BotFather). "
+              : ""}
+            {!data?.configured.max
+              ? "Подключите аккаунт MAX в карточке ниже — по номеру телефона и коду из SMS."
+              : ""}{" "}
+            Подробности — в разделе «Запуск» внизу страницы.
           </p>
         </div>
       )}
@@ -314,26 +391,34 @@ export function Dashboard() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatusCard
           icon={<Send size={18} className="text-sky-300" />}
-          label="Telegram-бот"
+          label="Telegram-бот (рассылка)"
           ok={data?.configured.telegram && !!data?.bots.telegram}
           title={
             data?.bots.telegram?.username
               ? `@${data.bots.telegram.username}`
               : "не подключён"
           }
-          sub={data?.bots.telegram?.name ?? data?.bots.telegramError ?? "ожидание токена"}
+          sub={data?.bots.telegram?.name ?? data?.bots.telegramError ?? "токен @BotFather в TELEGRAM_BOT_TOKEN"}
           glow="tg"
         />
         <StatusCard
-          icon={<Bot size={18} className="text-violet-300" />}
-          label="Бот-приёмник MAX"
-          ok={data?.configured.max && !!data?.bots.max}
+          icon={<UserRound size={18} className="text-violet-300" />}
+          label="Аккаунт MAX (чтение группы)"
+          ok={Boolean(data?.maxAccount.connected)}
           title={
-            data?.bots.max?.username
-              ? `@${data.bots.max.username}`
-              : "не подключён"
+            data?.maxAccount.connected
+              ? accountStatusLabel("connected")
+              : accountStatusLabel(data?.maxAccount.status ?? "disconnected")
           }
-          sub={data?.bots.max?.name ?? data?.bots.maxError ?? "ожидание токена"}
+          sub={
+            data?.maxAccount.connected
+              ? `${data.maxAccount.info?.chatsCount ?? 0} чатов · ${
+                  data.maxAccount.lastSync
+                    ? `синк ${fmtTime(data.maxAccount.lastSync)}`
+                    : "синхронизация"
+                }`
+              : (data?.maxAccount.error ?? "войдите по номеру телефона ниже")
+          }
           glow="max"
         />
         <StatusCard
@@ -352,8 +437,194 @@ export function Dashboard() {
         />
       </div>
 
-      {/* controls */}
+      {/* connect account + relay settings */}
       <div className="grid gap-4 lg:grid-cols-2">
+        <div className="g-card p-5">
+          <div className="mb-4 flex items-center gap-2.5">
+            <span className="grid size-8 place-items-center rounded-lg bg-white/5 text-zinc-300">
+              <UserRound size={16} />
+            </span>
+            <h3 className="font-display text-base font-semibold text-white">
+              Подключение аккаунта MAX
+            </h3>
+          </div>
+
+          {data?.maxAccount.connected ? (
+            <div className="space-y-3">
+              <div className="rounded-xl border border-emerald-400/25 bg-emerald-400/[0.07] px-4 py-3.5">
+                <p className="flex items-center gap-2 text-sm font-medium text-emerald-200">
+                  <StatusDot alive /> Аккаунт в сети
+                </p>
+                <p className="mt-1 text-xs text-emerald-200/70">
+                  Мост читает{" "}
+                  {data.bridge.maxChatId
+                    ? "выбранную группу"
+                    : `${data.maxAccount.info?.chatsCount ?? "…"} чатов`}{" "}
+                  от лица вашего аккаунта и пересылает сообщения подписчикам.
+                </p>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[11px] leading-snug text-zinc-600">
+                  Сессия живёт, пока запущен сервер. После рестарта Railway —
+                  подключите снова (или задайте MAX_ACCOUNT_TOKEN для автовхода).
+                </p>
+                <button
+                  onClick={disconnectMax}
+                  disabled={busy === "disconnect"}
+                  className="flex shrink-0 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-2 text-xs font-medium text-zinc-300 transition-colors hover:border-rose-400/40 hover:text-rose-300"
+                >
+                  {busy === "disconnect" ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <LogOut size={14} />
+                  )}
+                  Отключить
+                </button>
+              </div>
+            </div>
+          ) : (
+            <form onSubmit={codeSent ? verifyCode : requestCode} className="space-y-3">
+              <p className="text-[13px] leading-relaxed text-zinc-400">
+                Войдите в свой аккаунт по номеру телефона: придёт SMS (или сообщение
+                в MAX) с кодом. Токен хранится только в памяти сервера — в базу не пишется.
+              </p>
+              {!codeSent ? (
+                <div className="flex gap-2">
+                  <input
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="+79XXXXXXXXX"
+                    inputMode="tel"
+                    className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/30 px-3.5 py-2.5 font-mono text-[13px] text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-violet-400/50"
+                  />
+                  <button
+                    type="submit"
+                    disabled={busy === "sms"}
+                    className="flex shrink-0 items-center gap-2 rounded-xl bg-violet-500 px-4 text-sm font-medium text-white transition-colors hover:bg-violet-400 disabled:opacity-50"
+                  >
+                    {busy === "sms" ? (
+                      <Loader2 size={15} className="animate-spin" />
+                    ) : (
+                      <ArrowRight size={15} />
+                    )}
+                    Получить код
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <input
+                      value={smsCode}
+                      onChange={(e) => setSmsCode(e.target.value)}
+                      onFocus={(e) => e.target.select()}
+                      placeholder="Код из SMS"
+                      inputMode="numeric"
+                      autoFocus
+                      className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/30 px-3.5 py-2.5 text-center font-mono text-lg tracking-[0.4em] text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-violet-400/50"
+                    />
+                    <button
+                      type="submit"
+                      disabled={busy === "verify"}
+                      className="flex shrink-0 items-center gap-2 rounded-xl bg-violet-500 px-4 text-sm font-medium text-white transition-colors hover:bg-violet-400 disabled:opacity-50"
+                    >
+                      {busy === "verify" ? (
+                        <Loader2 size={15} className="animate-spin" />
+                      ) : (
+                        <CheckCheck size={15} />
+                      )}
+                      Войти
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      setCodeSent(false);
+                      requestCode(e as unknown as React.FormEvent);
+                    }}
+                    className="text-xs text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
+                  >
+                    Отправить код ещё раз на {phone}
+                  </button>
+                </div>
+              )}
+              {connectMsg && (
+                <p className="flex items-center gap-1.5 text-xs text-emerald-300">
+                  <CheckCheck size={13} /> {connectMsg}
+                </p>
+              )}
+
+              {(captchaLink || connectErr?.includes("капч")) && (
+                <div className="space-y-2.5 rounded-xl border border-sky-400/25 bg-sky-400/[0.07] px-3.5 py-3">
+                  <p className="text-xs font-medium text-sky-200">
+                    MAX просит пройти VK-капчу (для IP сервера Railway это норма)
+                  </p>
+                  {captchaLink && (
+                    <a
+                      href={captchaLink}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-2 rounded-xl bg-sky-500 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-sky-400"
+                    >
+                      <ExternalLink size={13} /> Открыть капчу в новой вкладке
+                    </a>
+                  )}
+                  <p className="text-[11px] leading-relaxed text-sky-200/70">
+                    После прохождения страница капчи перенаправит на адрес вида{" "}
+                    <code className="rounded bg-black/40 px-1 font-mono">
+                      …&token=&lt;токен&gt;…
+                    </code>{" "}
+                    — скопируйте значение token (или весь адрес) и вставьте ниже.
+                    Либо просто войдите один раз в web.max.ru с этого телефона и
+                    нажмите «Получить код» ещё раз.
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      value={captchaTokenDraft}
+                      onChange={(e) => setCaptchaTokenDraft(e.target.value)}
+                      placeholder="Токен капчи или весь URL"
+                      className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/30 px-3 py-2 font-mono text-[11px] text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-sky-400/50"
+                    />
+                    <button
+                      type="button"
+                      onClick={submitCaptcha}
+                      disabled={busy === "sms" || !captchaTokenDraft.trim()}
+                      className="shrink-0 rounded-xl bg-sky-500 px-3.5 text-xs font-medium text-white transition-colors hover:bg-sky-400 disabled:opacity-50"
+                    >
+                      {busy === "sms" ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        "Повторить"
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {connectErr && !connectErr.includes("капч") && (
+                <p className="flex items-start gap-1.5 text-xs leading-relaxed text-rose-300">
+                  <AlertTriangle size={13} className="mt-0.5 shrink-0" /> {connectErr}
+                </p>
+              )}
+              {data?.maxAccount.error && !connectErr && (
+                <p className="flex items-start gap-1.5 text-xs leading-relaxed text-amber-300/90">
+                  <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                  {data.maxAccount.error}
+                </p>
+              )}
+              <div className="flex items-start gap-2 rounded-xl border border-amber-400/20 bg-amber-400/[0.06] px-3.5 py-3 text-[11px] leading-relaxed text-amber-200/80">
+                <ShieldAlert size={14} className="mt-0.5 shrink-0 text-amber-300" />
+                <span>
+                  Это вход в ваш личный аккаунт через приватный протокол MAX
+                  (юзербот). Такая автоматизация может нарушать условия MAX —
+                  аккаунт теоретически могут ограничить. Для продакшна удобно
+                  один раз взять токен сессии и задать его как
+                  MAX_ACCOUNT_TOKEN на Railway — тогда вход после рестартов автоматический.
+                </span>
+              </div>
+            </form>
+          )}
+        </div>
+
         <div className="g-card p-5">
           <div className="mb-4 flex items-center gap-2.5">
             <span className="grid size-8 place-items-center rounded-lg bg-white/5 text-zinc-300">
@@ -366,9 +637,7 @@ export function Dashboard() {
 
           <div className="flex items-center justify-between gap-4 rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3.5">
             <div>
-              <p className="text-sm font-medium text-zinc-100">
-                Пересылка включена
-              </p>
+              <p className="text-sm font-medium text-zinc-100">Пересылка включена</p>
               <p className="text-xs text-zinc-500">
                 Сообщения из MAX летят подписчикам в Telegram
               </p>
@@ -400,7 +669,7 @@ export function Dashboard() {
                   setChatIdDraft(e.target.value);
                   setChatIdTouched(true);
                 }}
-                placeholder="пусто — все группы"
+                placeholder="пусто — все группы и каналы"
                 className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/30 px-3.5 py-2.5 font-mono text-[13px] text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-violet-400/50"
               />
               <button
@@ -408,11 +677,7 @@ export function Dashboard() {
                 disabled={busy === "filter"}
                 className="rounded-xl bg-violet-500 px-4 text-sm font-medium text-white transition-colors hover:bg-violet-400 disabled:opacity-50"
               >
-                {busy === "filter" ? (
-                  <Loader2 size={16} className="animate-spin" />
-                ) : (
-                  "Сохранить"
-                )}
+                {busy === "filter" ? <Loader2 size={16} className="animate-spin" /> : "Сохранить"}
               </button>
             </div>
             {(data?.bridge.knownChats.length ?? 0) > 0 && (
@@ -425,64 +690,61 @@ export function Dashboard() {
                       setChatIdTouched(true);
                     }}
                     className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:border-violet-400/40 hover:text-white"
-                    title={`chat_id: ${c.chatId}`}
+                    title={`chat_id: ${c.chatId}${c.type ? ` · ${c.type}` : ""}`}
                   >
-                    {c.title} · <span className="font-mono text-[11px] text-zinc-500">{c.chatId}</span>
+                    {c.title}{" "}
+                    <span className="font-mono text-[11px] text-zinc-500">
+                      {c.chatId}
+                    </span>
                   </button>
                 ))}
               </div>
             )}
             <p className="mt-2 text-[11px] leading-relaxed text-zinc-600">
-              Бот запоминает группы, в которые его добавили, — они появятся выше.
-              Нажмите на группу, чтобы пересылать сообщения только из неё.
+              После подключения аккаунта здесь появятся ваши группы и каналы MAX —
+              нажмите на нужную, чтобы пересылать сообщения только из неё.
             </p>
           </div>
-        </div>
 
-        <div className="g-card p-5">
-          <div className="mb-4 flex items-center gap-2.5">
-            <span className="grid size-8 place-items-center rounded-lg bg-white/5 text-zinc-300">
-              <FlaskConical size={16} />
-            </span>
-            <h3 className="font-display text-base font-semibold text-white">
-              Тестовая пересылка
-            </h3>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              value={testName}
-              onChange={(e) => setTestName(e.target.value)}
-              placeholder="Имя (как в MAX)"
-              className="rounded-xl border border-white/10 bg-black/30 px-3.5 py-2.5 text-[13px] text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-violet-400/50"
-            />
-            <input
-              value={testNick}
-              onChange={(e) => setTestNick(e.target.value)}
-              placeholder="Ник в MAX"
-              className="rounded-xl border border-white/10 bg-black/30 px-3.5 py-2.5 font-mono text-[13px] text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-violet-400/50"
-            />
-          </div>
-          <textarea
-            value={testText}
-            onChange={(e) => setTestText(e.target.value)}
-            rows={3}
-            className="mt-2 w-full resize-none rounded-xl border border-white/10 bg-black/30 px-3.5 py-2.5 text-[13px] text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-violet-400/50"
-            placeholder="Текст сообщения"
-          />
-          <div className="mt-2 flex items-center justify-between gap-3">
-            <p className="text-xs text-emerald-300/90">{testResult}</p>
-            <button
-              onClick={runTest}
-              disabled={busy === "test"}
-              className="flex items-center gap-2 rounded-xl bg-sky-500 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-sky-400 disabled:opacity-50"
-            >
-              {busy === "test" ? (
-                <Loader2 size={15} className="animate-spin" />
-              ) : (
-                <Send size={15} />
-              )}
-              Отправить в Telegram
-            </button>
+          <div className="mt-5 border-t border-white/8 pt-4">
+            <div className="mb-3 flex items-center gap-2.5">
+              <span className="grid size-7 place-items-center rounded-lg bg-white/5 text-zinc-400">
+                <FlaskConical size={14} />
+              </span>
+              <h4 className="text-sm font-semibold text-zinc-200">
+                Тестовая пересылка
+              </h4>
+            </div>
+            <div className="grid grid-cols-[140px_1fr] gap-2">
+              <input
+                value={testName}
+                onChange={(e) => setTestName(e.target.value)}
+                placeholder="Имя отправителя"
+                className="rounded-xl border border-white/10 bg-black/30 px-3.5 py-2.5 text-[13px] text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-violet-400/50"
+              />
+              <div className="flex gap-2">
+                <input
+                  value={testText}
+                  onChange={(e) => setTestText(e.target.value)}
+                  placeholder="Текст сообщения"
+                  className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/30 px-3.5 py-2.5 text-[13px] text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-violet-400/50"
+                />
+                <button
+                  onClick={runTest}
+                  disabled={busy === "test"}
+                  className="flex shrink-0 items-center gap-2 rounded-xl bg-sky-500 px-4 text-sm font-medium text-white transition-colors hover:bg-sky-400 disabled:opacity-50"
+                >
+                  {busy === "test" ? (
+                    <Loader2 size={15} className="animate-spin" />
+                  ) : (
+                    <Send size={15} />
+                  )}
+                </button>
+              </div>
+            </div>
+            {testResult && (
+              <p className="mt-2 text-xs text-emerald-300/90">{testResult}</p>
+            )}
           </div>
         </div>
       </div>
@@ -572,13 +834,15 @@ export function Dashboard() {
               Подписчики
             </h3>
           </div>
-          <div className="scrollbar-thin max-h-[520px] space-y-2 overflow-y-auto pr-1">
+          <div className="scrollbar-thin max-h-[420px] space-y-2 overflow-y-auto pr-1">
             {!data || data.subscribers.length === 0 ? (
               <div className="grid place-items-center rounded-xl border border-dashed border-white/10 py-12 text-center">
                 <Users size={20} className="text-zinc-600" />
                 <p className="mt-3 px-4 text-[13px] leading-relaxed text-zinc-500">
                   Никто пока не подписан. Откройте вашего Telegram-бота и отправьте{" "}
-                  <code className="rounded bg-black/40 px-1 font-mono text-[12px] text-violet-300">/start</code>
+                  <code className="rounded bg-black/40 px-1 font-mono text-[12px] text-violet-300">
+                    /start
+                  </code>
                 </p>
               </div>
             ) : (
@@ -654,7 +918,7 @@ export function Dashboard() {
 
       <div className="flex items-center gap-2 text-[11px] text-zinc-600">
         <CheckCheck size={13} className="text-emerald-500" />
-        Доставленные сообщения хранятся в PostgreSQL на Railway и доступны только вам в этой панели.
+        Доставленные сообщения хранятся в PostgreSQL на Railway; токен аккаунта MAX — только в памяти сервера.
       </div>
     </div>
   );

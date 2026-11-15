@@ -2,8 +2,10 @@ import {
   countActiveSubscribers,
   countEvents,
   getJsonSetting,
+  getMaxAccountToken,
   getSetting,
   listAllSubscribers,
+  listKnownChats,
   listRecentEvents,
 } from "@/lib/bridge/store";
 import { getMaxChatFilter, isBridgeEnabled } from "@/lib/bridge/bridge";
@@ -12,6 +14,12 @@ export type BotInfo = {
   username?: string;
   name?: string;
   id?: number;
+  at?: string;
+};
+
+export type MaxAccountInfo = {
+  ownUserId?: number | null;
+  chatsCount?: number;
   at?: string;
 };
 
@@ -26,54 +34,65 @@ export async function getBridgeStatus() {
     maxChatId,
     knownChats,
     heartbeat,
-    maxLastPoll,
+    maxLastSync,
     tgBotInfo,
-    maxBotInfo,
+    maxAccountInfo,
+    maxAccountStatus,
+    maxAccountError,
     tgBotError,
-    maxBotError,
     subs,
     events,
     eventsTotal,
   ] = await Promise.all([
     isBridgeEnabled(),
     getMaxChatFilter(),
-    getJsonSetting<{ chatId: string; title: string; seenAt: string }[]>(
-      "max_known_chats",
-    ),
+    listKnownChats(),
     getSetting("worker_heartbeat"),
-    getSetting("max_last_poll"),
+    getSetting("max_last_sync"),
     getJsonSetting<BotInfo>("tg_bot_info"),
-    getJsonSetting<BotInfo>("max_bot_info"),
+    getJsonSetting<MaxAccountInfo>("max_account_info"),
+    getSetting("max_account_status"),
+    getSetting("max_account_error"),
     getSetting("tg_bot_error"),
-    getSetting("max_bot_error"),
     listAllSubscribers(),
     listRecentEvents(40),
     countEvents(),
   ]);
 
   const heartbeatMs = heartbeat ? Date.parse(heartbeat) : 0;
-  const workerAlive =
-    heartbeatMs > 0 && Date.now() - heartbeatMs < 60_000;
+  const workerAlive = heartbeatMs > 0 && Date.now() - heartbeatMs < 60_000;
+
+  const accountConnected =
+    (maxAccountStatus ?? "") === "connected" ||
+    (maxLastSync != null && Date.now() - Date.parse(maxLastSync) < 60_000);
 
   return {
     configured: {
       telegram: Boolean(process.env.TELEGRAM_BOT_TOKEN),
-      max: Boolean(process.env.MAX_BOT_TOKEN),
+      // у аккаунта нет env как источника истины: считаем настроенным, если
+      // сессия подключена или уже сейчас живёт в воркере
+      max: accountConnected || Boolean(getMaxAccountToken()),
       db: Boolean(process.env.DATABASE_URL),
     },
     bridge: {
       enabled,
       maxChatId,
-      knownChats: knownChats ?? [],
+      knownChats,
       workerAlive,
       heartbeat,
-      maxLastPoll,
+      maxLastSync,
     },
     bots: {
       telegram: tgBotInfo,
-      max: maxBotInfo,
-      telegramError: tgBotError,
-      maxError: maxBotError,
+      telegramError: tgBotError || null,
+    },
+    maxAccount: {
+      connected: accountConnected,
+      status: maxAccountStatus ?? "disconnected",
+      error: maxAccountError || null,
+      hasTokenInEnv: Boolean(process.env.MAX_ACCOUNT_TOKEN),
+      info: maxAccountInfo,
+      lastSync: maxLastSync,
     },
     stats: {
       activeSubscribers: await countActiveSubscribers(),

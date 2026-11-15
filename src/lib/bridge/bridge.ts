@@ -1,18 +1,16 @@
-import type { MaxUpdate } from "@/lib/max";
 import type { TgUpdate } from "@/lib/telegram";
 import { escapeHtml, tgSendMessage } from "@/lib/telegram";
 import {
   countActiveSubscribers,
-  getJsonSetting,
   getSetting,
   insertEvent,
-  knownChatTitle,
   listActiveSubscribers,
-  rememberKnownChat,
+  setSetting,
   setSubscriberActive,
   updateEvent,
   upsertSubscriber,
 } from "@/lib/bridge/store";
+import { getMaxAccountToken } from "@/lib/bridge/store";
 import type { Subscriber } from "@/lib/bridge/store";
 
 /** Мост включён по умолчанию; выключается настройкой из панели. */
@@ -27,48 +25,6 @@ export async function getMaxChatFilter(): Promise<string | null> {
   if (fromSettings !== null) return fromSettings.trim() || null;
   const fromEnv = process.env.MAX_CHAT_ID;
   return fromEnv && fromEnv.trim() ? fromEnv.trim() : null;
-}
-
-const ATTACHMENT_LABELS: Record<string, string> = {
-  image: "Фото",
-  video: "Видео",
-  audio: "Аудио",
-  file: "Файл",
-  sticker: "Стикер",
-  voice: "Голосовое сообщение",
-  contact: "Контакт",
-  location: "Геопозиция",
-  inline_keyboard: "Кнопки",
-  share: "Репост",
-  photo: "Фото",
-};
-
-function describeAttachments(
-  attachments: { type?: string; payload?: { url?: string } }[],
-): string[] {
-  return attachments.map((a) => {
-    const label = ATTACHMENT_LABELS[a.type ?? ""] ?? "Вложение";
-    const url = a.payload?.url;
-    return url ? `[${label}] ${url}` : `[${label}]`;
-  });
-}
-
-export async function buildTelegramText(opts: {
-  senderName: string;
-  senderUsername: string | null;
-  text: string;
-  chatTitle: string | null;
-}): Promise<string> {
-  const lines: string[] = [];
-  const name = `<b>${escapeHtml(opts.senderName)}</b>`;
-  const nick = opts.senderUsername
-    ? ` <code>@${escapeHtml(opts.senderUsername)}</code>`
-    : "";
-  lines.push(name + nick);
-  if (opts.chatTitle) lines.push(`<i>чат: ${escapeHtml(opts.chatTitle)}</i>`);
-  lines.push("");
-  lines.push(opts.text);
-  return lines.join("\n");
 }
 
 export type BroadcastResult = {
@@ -99,26 +55,42 @@ export async function broadcastEvent(input: {
     delivered: 0,
     status: "ok",
   });
-  if (!event) return { duplicate: true, delivered: 0, status: "duplicate", eventId: null };
+  if (!event)
+    return { duplicate: true, delivered: 0, status: "duplicate", eventId: null };
 
   const enabled = await isBridgeEnabled();
   const subs: Subscriber[] = await listActiveSubscribers();
 
   if (!enabled && !input.force) {
     await updateEvent(event.id, { status: "disabled", delivered: 0 });
-    return { duplicate: false, delivered: 0, status: "disabled", eventId: event.id };
+    return {
+      duplicate: false,
+      delivered: 0,
+      status: "disabled",
+      eventId: event.id,
+    };
   }
   if (subs.length === 0) {
     await updateEvent(event.id, { status: "no-subscribers", delivered: 0 });
-    return { duplicate: false, delivered: 0, status: "no-subscribers", eventId: event.id };
+    return {
+      duplicate: false,
+      delivered: 0,
+      status: "no-subscribers",
+      eventId: event.id,
+    };
   }
 
-  const tgText = await buildTelegramText({
-    senderName: input.senderName,
-    senderUsername: input.senderUsername,
-    text: input.text || "(пустое сообщение)",
-    chatTitle: input.maxChatTitle ?? null,
-  });
+  const lines: string[] = [];
+  const name = `<b>${escapeHtml(input.senderName)}</b>`;
+  const nick = input.senderUsername
+    ? ` <code>@${escapeHtml(input.senderUsername)}</code>`
+    : "";
+  lines.push(name + nick);
+  if (input.maxChatTitle)
+    lines.push(`<i>чат: ${escapeHtml(input.maxChatTitle)}</i>`);
+  lines.push("");
+  lines.push(input.text || "(пустое сообщение)");
+  const tgText = lines.join("\n");
 
   let delivered = 0;
   let hadError = false;
@@ -143,66 +115,6 @@ export async function broadcastEvent(input: {
   return { duplicate: false, delivered, status, eventId: event.id };
 }
 
-/* ------------------------- MAX update handling ------------------------- */
-
-export async function handleMaxUpdate(update: MaxUpdate): Promise<void> {
-  switch (update.update_type) {
-    case "message_created": {
-      const msg = update.message;
-      if (!msg?.body) return;
-      if (msg.sender?.is_bot) return;
-
-      const chatId = msg.recipient?.chat_id != null ? String(msg.recipient.chat_id) : null;
-      const filter = await getMaxChatFilter();
-      if (filter && chatId !== filter) return;
-
-      const textParts: string[] = [];
-      if (msg.body.text?.trim()) textParts.push(msg.body.text.trim());
-      if (msg.body.attachments?.length) {
-        textParts.push(...describeAttachments(msg.body.attachments));
-      }
-      const text = textParts.join("\n") || "(сообщение без текста)";
-
-      const chatTitle = chatId ? await knownChatTitle(chatId) : null;
-
-      await broadcastEvent({
-        senderName: msg.sender?.name ?? "Участник MAX",
-        senderUsername: msg.sender?.username ?? null,
-        text,
-        maxChatId: chatId,
-        maxChatTitle: chatTitle,
-        maxMid: msg.body.mid ?? null,
-      });
-      return;
-    }
-    case "bot_added_to_chat": {
-      const chatId = update.chat_id != null ? String(update.chat_id) : null;
-      const title = update.chat?.title ?? "Группа MAX";
-      if (chatId) await rememberKnownChat(chatId, title);
-      await insertEvent({
-        kind: "system",
-        maxChatId: chatId,
-        maxChatTitle: title,
-        senderName: "MAX",
-        senderUsername: null,
-        text: `Бот добавлен в группу «${title}»${chatId ? ` (chat_id: ${chatId})` : ""}`,
-        maxMid: null,
-        delivered: 0,
-        status: "ok",
-      });
-      return;
-    }
-    case "chat_title_changed": {
-      const chatId = update.chat_id != null ? String(update.chat_id) : null;
-      const title = update.chat?.title ?? null;
-      if (chatId && title) await rememberKnownChat(chatId, title);
-      return;
-    }
-    default:
-      return;
-  }
-}
-
 /* ------------------------ Telegram update handling ---------------------- */
 
 const WELCOME_TEXT = [
@@ -219,7 +131,7 @@ const WELCOME_TEXT = [
 const HELP_TEXT = [
   "<b>Как это работает</b>",
   "",
-  "Бот-приёмник состоит в группе MAX и читает её сообщения. Этот Telegram-бот дублирует их вам в личку.",
+  "Владелец группы держит свой аккаунт MAX в группе — мост читает её и дублирует сообщения вам в Telegram.",
   "",
   "/start — подписаться на пересылку",
   "/stop — отписаться",
@@ -260,7 +172,7 @@ export async function handleTgUpdate(update: TgUpdate): Promise<void> {
         "<b>Состояние моста</b>",
         `Пересылка: ${enabled ? "включена" : "выключена администратором"}`,
         `Активных подписчиков: ${total}`,
-        `Группа MAX: ${filter ? `<code>${escapeHtml(filter)}</code>` : "все группы, где есть бот"}`,
+        `Группа MAX: ${filter ? `<code>${escapeHtml(filter)}</code>` : "все группы, где есть аккаунт"}`,
       ].join("\n"),
     );
     return;
@@ -275,12 +187,4 @@ export async function handleTgUpdate(update: TgUpdate): Promise<void> {
     chatId,
     "Я только пересылаю сообщения из MAX и не отвечаю в чат. Команды: /start, /stop, /status, /help.",
   );
-}
-
-export async function getKnownChats() {
-  return ((await getJsonSetting("max_known_chats")) ?? []) as {
-    chatId: string;
-    title: string;
-    seenAt: string;
-  }[];
 }

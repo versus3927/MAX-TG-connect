@@ -3,7 +3,7 @@
 import {
   Bot,
   KeyRound,
-  MessageSquarePlus,
+  Smartphone,
   TrainFront,
   UserPlus,
   Variable,
@@ -16,26 +16,29 @@ const steps = [
     accent: "text-sky-300",
     chip: "Шаг 1",
     title: "Создайте Telegram-бота",
-    body: "Откройте @BotFather в Telegram, отправьте /newbot, придумайте имя и получите токен. Это бот, который будет присылать сообщения людям без MAX.",
+    body: "Откройте @BotFather в Telegram, отправьте /newbot, придумайте имя и получите токен. Именно этот бот будет присылать сообщения людям без MAX.",
     keys: [{ label: "Переменная на Railway", value: "TELEGRAM_BOT_TOKEN=1234567890:AA...(токен от @BotFather)" }],
   },
   {
-    icon: MessageSquarePlus,
+    icon: Smartphone,
     accent: "text-violet-300",
     chip: "Шаг 2",
-    title: "Создайте бота-приёмника в MAX",
-    body: "Создайте бота на платформе MAX для партнёров (dev.max.ru) и скопируйте его токен. Затем добавьте этого бота в группу MAX, где состоит ваш аккаунт, — он будет читать все сообщения группы.",
-    keys: [{ label: "Переменная на Railway", value: "MAX_BOT_TOKEN=токен бота MAX" }],
+    title: "Подключите свой аккаунт MAX",
+    body: "Бот для MAX не нужен — мост работает от вашего аккаунта. После деплоя откройте веб-панель, введите номер телефона и код из SMS. Ваш аккаунт должен состоять в группе, которую вы пересылаете.",
+    keys: [
+      { label: "Способ по умолчанию", value: "Вход по номеру телефона прямо в веб-панели" },
+      { label: "Альтернатива (автовход после рестарта)", value: "MAX_ACCOUNT_TOKEN=токен сессии аккаунта" },
+    ],
   },
   {
     icon: TrainFront,
     accent: "text-fuchsia-300",
     chip: "Шаг 3",
     title: "Задеплойте на Railway",
-    body: "Railway → New Project → Deploy from GitHub. Добавьте в проект сервис PostgreSQL и задайте переменные. Конфиг railway.toml уже в репозитории: таблицы в БД создадутся автоматически при старте.",
+    body: "Railway → New Project → Deploy from GitHub. Добавьте сервис PostgreSQL и задайте переменные. Таблицы в БД создаются автоматически при старте (railway.toml уже в репозитории).",
     keys: [
       { label: "База данных", value: "DATABASE_URL=${{Postgres.DATABASE_URL}}" },
-      { label: "Защита панели (опционально)", value: "ADMIN_SECRET=любой-длинный-секрет" },
+      { label: "Защита панели (настоятельно рекомендую)", value: "ADMIN_SECRET=любой-длинный-секрет" },
       { label: "Фильтр группы (опционально)", value: "MAX_CHAT_ID=chat_id конкретной группы" },
     ],
   },
@@ -44,7 +47,7 @@ const steps = [
     accent: "text-emerald-300",
     chip: "Шаг 4",
     title: "Напишите /start",
-    body: "Каждый, кто хочет получать сообщения, открывает Telegram-бота и отправляет /start. Всё — новые сообщения группы MAX приходят ему в личку с именем и ником отправителя. Команда /stop отключает пересылку.",
+    body: "Каждый, кто хочет получать сообщения, открывает Telegram-бота и отправляет /start. Всё — новые сообщения группы MAX приходят ему в личку с именем и ником отправителя. /stop отключает пересылку.",
     keys: [{ label: "Команды бота", value: "/start — подписаться · /stop — отписаться · /status — состояние" }],
   },
 ];
@@ -57,8 +60,8 @@ export function SetupGuide() {
           Запуск за четыре шага
         </h2>
         <p className="mt-2 text-sm leading-relaxed text-zinc-500">
-          Мост — это сервис на Railway: фоновый воркер читает группу MAX через
-          Bot API и пересылает каждое сообщение всем подписчикам Telegram-бота.
+          Мост — сервис на Railway с вашим аккаунтом MAX внутри: он читает группу
+          и пересылает каждое сообщение всем подписчикам Telegram-бота.
           Вебхуки и публичный домен не нужны — работает long polling.
         </p>
       </div>
@@ -95,9 +98,9 @@ export function SetupGuide() {
       <div className="g-card-soft flex flex-wrap items-center gap-x-6 gap-y-3 px-5 py-4 text-[12px] text-zinc-500">
         <span className="flex items-center gap-2">
           <Variable size={14} className="text-zinc-400" />
-          Все переменные окружения:
+          Переменные окружения:
         </span>
-        {["TELEGRAM_BOT_TOKEN", "MAX_BOT_TOKEN", "DATABASE_URL", "MAX_CHAT_ID", "ADMIN_SECRET", "MAX_API_BASE"].map(
+        {["TELEGRAM_BOT_TOKEN", "DATABASE_URL", "MAX_CHAT_ID", "ADMIN_SECRET", "MAX_ACCOUNT_TOKEN", "MAX_DEVICE_ID", "MAX_WS_URL"].map(
           (v) => (
             <code key={v} className="font-mono text-zinc-300">
               {v}
@@ -106,7 +109,7 @@ export function SetupGuide() {
         )}
         <span className="flex items-center gap-2">
           <KeyRound size={13} className="text-zinc-400" />
-          Токены не хранятся в репозитории — только в переменных Railway.
+          Токен аккаунта MAX хранится только в памяти сервера, не в базе.
         </span>
       </div>
     </div>

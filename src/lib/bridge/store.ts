@@ -34,6 +34,27 @@ export async function setJsonSetting(key: string, value: unknown) {
   await setSetting(key, JSON.stringify(value));
 }
 
+/* ------------------------- account token (RAM) ------------------------- */
+/**
+ * Токен аккаунта MAX из SMS-авторизации держим только в памяти процесса —
+ * в БД не пишем, чтобы секрет не жил в дампах PostgreSQL вечно.
+ */
+declare global {
+  // eslint-disable-next-line no-var
+  var __maxAccountToken: string | undefined;
+}
+
+let runtimeToken: string | null = process.env.MAX_ACCOUNT_TOKEN ?? null;
+
+export function getMaxAccountToken(): string | null {
+  return globalThis.__maxAccountToken ?? runtimeToken;
+}
+
+export function setMaxAccountToken(token: string | null): void {
+  runtimeToken = token;
+  globalThis.__maxAccountToken = token ?? undefined;
+}
+
 /* ---------------------------- subscribers ----------------------------- */
 
 export type Subscriber = typeof subscribers.$inferSelect;
@@ -128,13 +149,31 @@ export type KnownChat = { chatId: string; title: string; seenAt: string };
 export async function rememberKnownChat(
   chatId: string,
   title: string,
+  type?: string,
 ): Promise<void> {
-  const chats = (await getJsonSetting<KnownChat[]>("max_known_chats")) ?? [];
+  const chats =
+    (await getJsonSetting<(KnownChat & { type?: string })[]>("max_known_chats")) ??
+    [];
   const idx = chats.findIndex((c) => c.chatId === chatId);
-  const entry: KnownChat = { chatId, title, seenAt: new Date().toISOString() };
+  const entry: KnownChat & { type?: string } = {
+    chatId,
+    title,
+    type,
+    seenAt: new Date().toISOString(),
+  };
   if (idx >= 0) chats[idx] = entry;
   else chats.unshift(entry);
-  await setJsonSetting("max_known_chats", chats.slice(0, 20));
+  await setJsonSetting("max_known_chats", chats.slice(0, 30));
+}
+
+export async function listKnownChats(): Promise<
+  { chatId: string; title: string; seenAt: string; type?: string }[]
+> {
+  return (
+    (await getJsonSetting<{ chatId: string; title: string; seenAt: string; type?: string }[]>(
+      "max_known_chats",
+    )) ?? []
+  );
 }
 
 export async function knownChatTitle(

@@ -1,7 +1,6 @@
 import {
   ArrowRight,
   AtSign,
-  Bot,
   Database,
   MessagesSquare,
   Radio,
@@ -79,13 +78,13 @@ const features = [
     icon: AtSign,
     accent: "text-violet-300",
     title: "Кто написал — видно сразу",
-    body: "Каждое сообщение приходит с именем и ником отправителя в MAX, а не безликой сводкой.",
+    body: "Каждое сообщение приходит с именем отправителя в MAX, а не безликой сводкой.",
   },
   {
     icon: Zap,
     accent: "text-fuchsia-300",
     title: "Мгновенно и автоматически",
-    body: "Фоновый воркер читает группу через long polling — задержка пересылки меньше секунды.",
+    body: "Воркер слушает события MAX в реальном времени и держит резервный опрос истории — задержка меньше секунды.",
   },
   {
     icon: Database,
@@ -149,8 +148,8 @@ export default function Home() {
           </Reveal>
           <Reveal delay={0.16}>
             <p className="mx-auto mt-5 max-w-xl text-[15px] leading-relaxed text-zinc-400">
-              Для всех, у кого нет MAX. Бот читает выбранную группу, где состоит
-              ваш аккаунт, и мгновенно пересылает каждое сообщение в Telegram —
+              Для всех, у кого нет MAX. Ваш аккаунт MAX читает выбранную группу,
+              а мост мгновенно пересылает каждое сообщение в Telegram —
               с именем и ником отправителя. От пользователя нужна лишь команда{" "}
               <code className="rounded-md bg-white/10 px-1.5 py-0.5 font-mono text-[13px] text-violet-300">
                 /start
@@ -184,9 +183,9 @@ export default function Home() {
         <Reveal delay={0.3} className="mt-14">
           <div className="mx-auto flex max-w-3xl flex-col items-center sm:flex-row sm:justify-center">
             <NodeCard
-              icon={<Bot size={20} className="text-violet-300" />}
+              icon={<Smartphone size={20} className="text-violet-300" />}
               title="Группа MAX"
-              sub="бот-приёмник читает каждое сообщение"
+              sub="ваш аккаунт читает каждое сообщение"
               glow="max"
             />
             <FlowLine />
@@ -218,7 +217,7 @@ export default function Home() {
                 "сообщения без MAX",
                 "имя и ник отправителя",
                 "/start и готово",
-                "long polling без webhook",
+                "аккаунт MAX вместо бота",
                 "PostgreSQL на Railway",
                 "пересылка меньше секунды",
               ].map((t) => (
